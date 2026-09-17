@@ -1,4 +1,4 @@
-<img src="docs/mark-codo.svg" width="64" height="64" alt="Linkea logo">
+<img src="docs/icon.png" width="72" height="72" alt="Linkea logo">
 
 # Linkea
 
@@ -50,7 +50,7 @@ Click "Set Linkea as Default Browser" in the setup window and accept the macOS c
 
 - Click any link in any app: the picker appears at your cursor with the icons of your installed browsers. Click one to open the link there.
 - Press Esc or click anywhere else to dismiss the picker.
-- Linkea lives in the menu bar (paper plane icon) — reopen the setup window or quit from there. It has no Dock icon by design.
+- Linkea lives in the menu bar (spiral-and-arrow icon) — reopen the setup window or quit from there. It has no Dock icon by design.
 
 ## Browser profiles
 
