@@ -1,0 +1,72 @@
+name: Release
+
+# Only on version tags: macOS runner minutes are expensive, and a DMG is only
+# worth building when there is something to publish.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # gh release create
+
+jobs:
+  dmg:
+    name: Build and publish DMG
+    # Apple Silicon. "macos-26-arm64" is not a real label — the plain label is
+    # already arm64, and the Intel variant is the one that needs a suffix.
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # v1.2.3 -> 1.2.3. The repo never stores a version number that can go stale.
+      - name: Derive version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Run tests
+        run: |
+          xcodebuild test \
+            -project Linkea.xcodeproj \
+            -scheme Linkea \
+            -destination 'platform=macOS,arch=arm64'
+
+      - name: Build release app
+        run: |
+          xcodebuild build \
+            -project Linkea.xcodeproj \
+            -scheme Linkea \
+            -configuration Release \
+            -derivedDataPath build \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="-" \
+            DEVELOPMENT_TEAM="" \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
+
+      # Ad-hoc signature, not Developer ID: Gatekeeper still warns on first open,
+      # but an app with no signature at all will not launch on Apple Silicon.
+      - name: Package DMG
+        run: |
+          APP="build/Build/Products/Release/Linkea.app"
+          codesign --verify --strict --verbose=2 "$APP"
+          mkdir -p stage
+          cp -R "$APP" stage/
+          ln -s /Applications stage/Applications
+          hdiutil create \
+            -volname "Linkea" \
+            -srcfolder stage \
+            -ov -format UDZO \
+            "Linkea-$VERSION-arm64.dmg"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Linkea $VERSION" \
+            --generate-notes \
+            "Linkea-$VERSION-arm64.dmg"

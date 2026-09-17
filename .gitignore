@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# Xcode build output
+build/
+DerivedData/
+
+# Per-user Xcode state — window layout, breakpoints, last open file
+xcuserdata/
+*.xcuserstate
+
+# App packaging y símbolos de depuración
+*.dSYM
+*.dSYM.zip
+*.xcarchive
+*.hmap
+
+# Code coverage
+*.profraw
+*.profdata
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Repo git huérfano apartado durante el renombrado — borrable
+.git-anidado-huerfano.bak/
+
+# DMG generados localmente
+*.dmg

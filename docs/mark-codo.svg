@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Linkea">
+  <title>Linkea — Codo</title>
+  <circle cx="13" cy="50" r="6" fill="currentColor"/>
+  <g fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M13 50 V22 A8 8 0 0 1 21 14 H43"/>
+    <path d="M37 7 L45 14 L37 21"/>
+  </g>
+</svg>
