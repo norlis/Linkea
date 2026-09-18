@@ -59,6 +59,13 @@ nonisolated enum LinkRouterCore {
         )
     }
 
+    /// Browsers the picker shows after the user's hide list. When hiding would leave nothing,
+    /// everything stays visible — a preference must never leave a link with nowhere to go.
+    static func visibleBrowsers<Element>(_ browsers: [Element], hiddenIDs: Set<String>, id keyPath: KeyPath<Element, String>) -> [Element] {
+        let visible = browsers.filter { !hiddenIDs.contains($0[keyPath: keyPath]) }
+        return visible.isEmpty ? browsers : visible
+    }
+
     /// Moves the element matching `id` to the front, keeping the rest in Launch Services order.
     static func moveToFront<Element, ID: Equatable>(_ elements: [Element], matching id: ID?, id keyPath: KeyPath<Element, ID>) -> [Element] {
         guard let id, let index = elements.firstIndex(where: { $0[keyPath: keyPath] == id }) else { return elements }

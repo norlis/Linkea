@@ -53,6 +53,20 @@ struct RuleStoreTests {
         }
     }
 
+    @Test("Importing merges, persists and reports what changed")
+    func importPersistsAndCounts() throws {
+        try withIsolatedDefaults {
+            let store = RuleStore()
+            store.add(sample("kept"))
+            var edited = store.rules[0]
+            edited.name = "renamed"
+            let changed = store.importRules([edited, sample("new")])
+            #expect(changed == 2)
+            #expect(RuleStore().rules.map(\.name) == ["renamed", "new"])
+            #expect(store.importRules([edited]) == 0)
+        }
+    }
+
     @Test("Initialising the store purges the legacy per-host map")
     func purgesLegacyKey() throws {
         try withIsolatedDefaults {

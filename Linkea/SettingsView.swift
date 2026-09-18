@@ -1,4 +1,25 @@
 import SwiftUI
+import UniformTypeIdentifiers
+
+/// Raw bytes in, raw bytes out: the exporter only needs a container for the JSON that
+/// `RuleTransfer` already produced.
+nonisolated struct RulesDocument: FileDocument {
+    static let readableContentTypes: [UTType] = [.json]
+
+    let data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        data = configuration.file.regularFileContents ?? Data()
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
 
 /// Root of the app's single window: setup and rules in one place. The frame is fixed and each
 /// tab scrolls its own content — window-resizing via Auto Layout with dynamic SwiftUI content
@@ -12,7 +33,7 @@ struct SettingsRootView: View {
     var body: some View {
         TabView {
             Tab("General", systemImage: "gearshape") {
-                GeneralSettingsTab(manager: manager, onTryIt: onTryIt)
+                GeneralSettingsTab(manager: manager, discovery: discovery, onTryIt: onTryIt)
             }
             Tab("Rules", systemImage: "list.bullet.rectangle") {
                 SettingsView(store: store, discovery: discovery)
@@ -26,7 +47,12 @@ struct SettingsRootView: View {
 /// default browser), a picker preview, and the experimental Safari profile mapping.
 private struct GeneralSettingsTab: View {
     let manager: DefaultBrowserManager
+    let discovery: BrowserDiscovery
     let onTryIt: () -> Void
+
+    // Seeded from Preferences (the only config store) and written back through the binding,
+    // following the SafariProfilesSettingsView pattern.
+    @State private var hiddenBrowserIDs = Preferences.hiddenBrowserBundleIDs
 
     var body: some View {
         ScrollView {
@@ -55,6 +81,10 @@ private struct GeneralSettingsTab: View {
 
                 Divider()
 
+                browsersSection
+
+                Divider()
+
                 SafariProfilesSettingsView()
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -65,6 +95,44 @@ private struct GeneralSettingsTab: View {
             }
             .padding(28)
         }
+    }
+
+    private var browsersSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Browsers")
+                .font(.headline)
+            Text("Unchecked browsers stay out of the picker. Rules that point to them keep working, and if every browser is hidden the picker shows them all anyway.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            ForEach(discovery.browsers) { browser in
+                Toggle(isOn: visibilityBinding(for: browser.id)) {
+                    HStack(spacing: 6) {
+                        Image(nsImage: browser.icon)
+                            .resizable()
+                            .frame(width: 16, height: 16)
+                            .accessibilityHidden(true)
+                        Text(browser.name)
+                    }
+                }
+                .toggleStyle(.checkbox)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func visibilityBinding(for bundleID: String) -> Binding<Bool> {
+        Binding(
+            get: { !hiddenBrowserIDs.contains(bundleID) },
+            set: { visible in
+                if visible {
+                    hiddenBrowserIDs.remove(bundleID)
+                } else {
+                    hiddenBrowserIDs.insert(bundleID)
+                }
+                Preferences.hiddenBrowserBundleIDs = hiddenBrowserIDs
+            }
+        )
     }
 }
 
@@ -91,6 +159,10 @@ struct SettingsView: View {
     let discovery: BrowserDiscovery
     @State private var editing: RoutingRule?
     @State private var selection: RoutingRule.ID?
+    @State private var isImporting = false
+    @State private var isExporting = false
+    @State private var exportDocument: RulesDocument?
+    @State private var transferMessage: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -106,6 +178,40 @@ struct SettingsView: View {
         }
         .sheet(item: $editing) { rule in
             RuleEditorView(rule: rule, store: store, discovery: discovery)
+        }
+        .fileExporter(isPresented: $isExporting, document: exportDocument,
+                      contentType: .json, defaultFilename: "Linkea Rules") { result in
+            if case .failure(let error) = result {
+                AppLog.error("rules export failed", error: error)
+                transferMessage = "Export failed: \(error.localizedDescription)"
+            }
+        }
+        .fileImporter(isPresented: $isImporting, allowedContentTypes: [.json]) { result in
+            handleImport(result)
+        }
+        .alert("Rules", isPresented: Binding(
+            get: { transferMessage != nil },
+            set: { if !$0 { transferMessage = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(transferMessage ?? "")
+        }
+    }
+
+    private func handleImport(_ result: Result<URL, any Error>) {
+        do {
+            // The app is unsandboxed on purpose; the picked URL is readable directly.
+            let data = try Data(contentsOf: result.get())
+            let changed = store.importRules(try RuleTransfer.decode(data))
+            transferMessage = changed == 0
+                ? "Nothing new to import — every rule in the file is already in the table."
+                : "\(changed) rule\(changed == 1 ? "" : "s") imported."
+        } catch let error as RuleTransfer.TransferError {
+            AppLog.warn("rules import rejected", fields: ["error.type": "TransferError"])
+            transferMessage = error.message
+        } catch {
+            AppLog.error("rules import failed", error: error)
+            transferMessage = "Import failed: \(error.localizedDescription)"
         }
     }
 
@@ -165,6 +271,24 @@ struct SettingsView: View {
             }
             .accessibilityLabel("Delete rule")
             .disabled(selection == nil)
+
+            Divider()
+                .frame(height: 16)
+
+            Button("Import…") {
+                isImporting = true
+            }
+
+            Button("Export…") {
+                do {
+                    exportDocument = RulesDocument(data: try RuleTransfer.export(store.rules))
+                    isExporting = true
+                } catch {
+                    AppLog.error("rules export failed", error: error)
+                    transferMessage = "Export failed: \(error.localizedDescription)"
+                }
+            }
+            .disabled(store.rules.isEmpty)
 
             Spacer()
             Text("Drag to change precedence")

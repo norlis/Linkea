@@ -9,6 +9,7 @@ enum Preferences {
         static let safariProfileMenuTitles = "safari_profile_menu_titles"
         static let routingRules = "routing_rules"
         static let rulesPaused = "rules_paused"
+        static let hiddenBrowsers = "hidden_browsers"
     }
 
     /// Swappable so tests can point the accessors at an isolated suite instead of the user's
@@ -54,6 +55,13 @@ enum Preferences {
     static var rulesPaused: Bool {
         get { defaults.bool(forKey: Keys.rulesPaused) }
         set { defaults.set(newValue, forKey: Keys.rulesPaused) }
+    }
+
+    /// Browsers the user unchecked in Settings; the picker skips them. Stored sorted so the
+    /// persisted value is stable across writes.
+    static var hiddenBrowserBundleIDs: Set<String> {
+        get { Set(defaults.stringArray(forKey: Keys.hiddenBrowsers) ?? []) }
+        set { defaults.set(newValue.sorted(), forKey: Keys.hiddenBrowsers) }
     }
 
     static var onboardingCompleted: Bool {

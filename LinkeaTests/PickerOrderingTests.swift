@@ -29,6 +29,39 @@ struct PreferredBrowserOrderTests {
     }
 }
 
+struct BrowserVisibilityTests {
+    private func candidate(_ bundleID: String) -> LinkRouterCore.BrowserCandidate {
+        LinkRouterCore.BrowserCandidate(
+            bundleID: bundleID,
+            appURL: URL(filePath: "/Applications/\(bundleID).app"),
+            displayName: bundleID
+        )
+    }
+
+    private var installed: [LinkRouterCore.BrowserCandidate] {
+        [candidate("com.apple.Safari"), candidate("com.google.Chrome"), candidate("org.mozilla.firefox")]
+    }
+
+    @Test func hiddenBrowsersLeaveTheListKeepingOrder() {
+        let visible = LinkRouterCore.visibleBrowsers(installed, hiddenIDs: ["com.google.Chrome"], id: \.bundleID)
+        #expect(visible.map(\.bundleID) == ["com.apple.Safari", "org.mozilla.firefox"])
+    }
+
+    @Test func anEmptyHideListChangesNothing() {
+        #expect(LinkRouterCore.visibleBrowsers(installed, hiddenIDs: [], id: \.bundleID) == installed)
+    }
+
+    /// A preference must never leave a link with nowhere to go.
+    @Test func hidingEveryBrowserShowsThemAllInstead() {
+        let allHidden: Set<String> = ["com.apple.Safari", "com.google.Chrome", "org.mozilla.firefox"]
+        #expect(LinkRouterCore.visibleBrowsers(installed, hiddenIDs: allHidden, id: \.bundleID) == installed)
+    }
+
+    @Test func hidingUninstalledBrowsersIsHarmless() {
+        #expect(LinkRouterCore.visibleBrowsers(installed, hiddenIDs: ["com.microsoft.edgemac"], id: \.bundleID) == installed)
+    }
+}
+
 struct ShortcutKeyTests {
     @Test(arguments: [("1", 0), ("2", 1), ("9", 8), ("0", 9)])
     func theNumberRowAddressesTheFirstTenPositions(key: String, index: Int) {

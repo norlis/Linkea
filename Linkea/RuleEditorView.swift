@@ -267,7 +267,14 @@ struct RuleEditorView: View {
                     rule.destination = RuleDestination(browserBundleID: newBrowserID, profileID: nil)
                 })) {
                 ForEach(discovery.browsers) { browser in
-                    Text(browser.name).tag(browser.id)
+                    HStack(spacing: 6) {
+                        Image(nsImage: browser.icon)
+                            .resizable()
+                            .frame(width: 16, height: 16)
+                            .accessibilityHidden(true)
+                        Text(browser.name)
+                    }
+                    .tag(browser.id)
                 }
             }
             if let browser = selectedBrowser, !browser.profiles.isEmpty {

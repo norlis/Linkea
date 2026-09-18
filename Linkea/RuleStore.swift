@@ -44,6 +44,23 @@ final class RuleStore {
         persist()
     }
 
+    /// Merges imported rules in (same id updates in place, new ones append) and returns how many
+    /// rows the import actually added or changed, for the confirmation message.
+    func importRules(_ imported: [RoutingRule]) -> Int {
+        let before = rules
+        rules = RuleTransfer.merge(imported, into: rules)
+        let added = rules.count - before.count
+        let updated = imported.count { rule in
+            before.contains { $0.id == rule.id && $0 != rule }
+        }
+        persist()
+        AppLog.info("rules imported", fields: [
+            "rule.imported_count": String(imported.count),
+            "rule.changed_count": String(added + updated)
+        ])
+        return added + updated
+    }
+
     private func persist() {
         Preferences.routingRules = rules
         compiled = RuleCompiler.compile(rules)

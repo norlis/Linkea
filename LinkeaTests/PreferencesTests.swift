@@ -17,4 +17,12 @@ struct PreferencesTests {
             #expect(Preferences.safariProfileMenuTitles == ["New Work Window", "New Personal Window"])
         }
     }
+
+    @Test func hiddenBrowsersRoundTripAndDefaultToEmpty() throws {
+        try withIsolatedDefaults {
+            #expect(Preferences.hiddenBrowserBundleIDs.isEmpty)
+            Preferences.hiddenBrowserBundleIDs = ["com.vivaldi.Vivaldi", "org.mozilla.firefox"]
+            #expect(Preferences.hiddenBrowserBundleIDs == ["com.vivaldi.Vivaldi", "org.mozilla.firefox"])
+        }
+    }
 }

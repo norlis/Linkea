@@ -51,7 +51,8 @@ final class PickerPanelController: NSObject, NSWindowDelegate {
     func present(urls: [URL]) {
         let matched = urls.first.flatMap { RuleTable.firstMatch(for: $0, in: ruleStore.compiled) }
         let pinnedBundleID = matched?.rule.destination.browserBundleID
-        let browsers = LinkRouterCore.moveToFront(discovery.browsers, matching: pinnedBundleID, id: \.id)
+        let visible = LinkRouterCore.visibleBrowsers(discovery.browsers, hiddenIDs: Preferences.hiddenBrowserBundleIDs, id: \.id)
+        let browsers = LinkRouterCore.moveToFront(visible, matching: pinnedBundleID, id: \.id)
         // A pinned site pre-checks the box, so confirming with return keeps the rule rather than
         // silently dropping it.
         let state = PickerPanelState(remember: pinnedBundleID != nil)
