@@ -84,3 +84,22 @@ final class BrowserDiscovery {
         return found.count >= 2 ? found : []
     }
 }
+
+extension BrowserDiscovery {
+    /// A rule can name a browser the user uninstalled or a profile they deleted.
+    func canResolve(_ destination: RuleDestination) -> Bool {
+        guard let browser = browsers.first(where: { $0.id == destination.browserBundleID })
+        else { return false }
+        guard let profileID = destination.profileID else { return true }
+        return browser.profiles.contains { $0.id == profileID }
+    }
+
+    func open(_ urls: [URL], destination: RuleDestination) {
+        guard let browser = browsers.first(where: { $0.id == destination.browserBundleID })
+        else { return }
+        let profile = destination.profileID.flatMap { id in
+            browser.profiles.first { $0.id == id }
+        }
+        open(urls, with: browser, profile: profile)
+    }
+}

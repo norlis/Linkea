@@ -49,7 +49,8 @@ final class PickerPanelController: NSObject, NSWindowDelegate {
     }
 
     func present(urls: [URL]) {
-        let pinnedBundleID = urls.first.flatMap { ruleStore.destination(for: $0) }
+        let matched = urls.first.flatMap { RuleTable.firstMatch(for: $0, in: ruleStore.compiled) }
+        let pinnedBundleID = matched?.rule.destination.browserBundleID
         let browsers = LinkRouterCore.moveToFront(discovery.browsers, matching: pinnedBundleID, id: \.id)
         // A pinned site pre-checks the box, so confirming with return keeps the rule rather than
         // silently dropping it.
@@ -84,19 +85,26 @@ final class PickerPanelController: NSObject, NSWindowDelegate {
         Task { discovery.refresh() }
     }
 
-    /// Opens the links and applies the site rule: checked pins this browser, unchecked clears any
-    /// rule the site had.
+    /// Opens the links and, when the remember box is checked, writes a host rule for this choice.
+    /// Unchecking never deletes: rules are removed in Settings, where the user can see what they
+    /// are removing — not from a checkbox in a panel that lives for a quarter of a second.
     private func choose(_ browser: Browser, profile: BrowserProfile?) {
         let urls = presentedURLs
         guard !urls.isEmpty else {
             dismiss()
             return
         }
-        if let url = urls.first {
-            if state.remember {
-                ruleStore.remember(browser.id, for: url)
+        if let url = urls.first, state.remember,
+           let host = MatchSubjectResolver.subject(.host, for: url) {
+            let destination = RuleDestination(browserBundleID: browser.id, profileID: profile?.id)
+            if var existing = RuleTable.firstMatch(for: url, in: ruleStore.compiled)?.rule {
+                existing.destination = destination
+                ruleStore.update(existing)
             } else {
-                ruleStore.forget(for: url)
+                ruleStore.add(RoutingRule(
+                    name: host,
+                    matcher: .host(HostMatcher(host: host, includesSubdomains: false)),
+                    destination: destination))
             }
         }
         discovery.open(urls, with: browser, profile: profile)

@@ -1,0 +1,252 @@
+import SwiftUI
+
+/// Root of the app's single window: setup and rules in one place. The frame is fixed and each
+/// tab scrolls its own content — window-resizing via Auto Layout with dynamic SwiftUI content
+/// triggers AppKit's "Update Constraints in Window pass" loop.
+struct SettingsRootView: View {
+    let manager: DefaultBrowserManager
+    let discovery: BrowserDiscovery
+    let store: RuleStore
+    let onTryIt: () -> Void
+
+    var body: some View {
+        TabView {
+            Tab("General", systemImage: "gearshape") {
+                GeneralSettingsTab(manager: manager, onTryIt: onTryIt)
+            }
+            Tab("Rules", systemImage: "list.bullet.rectangle") {
+                SettingsView(store: store, discovery: discovery)
+            }
+        }
+        .frame(width: 640, height: 480)
+    }
+}
+
+/// The former one-screen setup: the single manual step macOS requires (choosing Linkea as the
+/// default browser), a picker preview, and the experimental Safari profile mapping.
+private struct GeneralSettingsTab: View {
+    let manager: DefaultBrowserManager
+    let onTryIt: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                // The app's effective icon, so this screen can never drift from the AppIcon asset.
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 72, height: 72)
+                    .accessibilityHidden(true)
+                Text("Welcome to Linkea")
+                    .font(.title.bold())
+                Text("Linkea routes every link you click to the browser you choose. For that to work, macOS needs Linkea to be your default browser.")
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+
+                Button("Set Linkea as Default Browser") {
+                    manager.requestDefault()
+                }
+                .buttonStyle(.glassProminent)
+
+                Label(
+                    manager.isDefault ? "Linkea is your default browser" : "Linkea is not the default browser yet",
+                    systemImage: manager.isDefault ? "checkmark.circle.fill" : "circle.dashed"
+                )
+                .foregroundStyle(manager.isDefault ? .green : .secondary)
+
+                Divider()
+
+                SafariProfilesSettingsView()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack {
+                    Button("Try It", action: onTryIt)
+                    Spacer()
+                }
+            }
+            .padding(28)
+        }
+    }
+}
+
+/// The one-line description of a matcher shown in the list. Pure, so it is tested.
+nonisolated enum RuleSummary {
+    static func text(for rule: RoutingRule) -> String {
+        switch rule.matcher {
+        case .host(let matcher):
+            matcher.includesSubdomains
+                ? "\(matcher.host) and subdomains"
+                : "\(matcher.host) exact"
+        case .regex(let matcher):
+            switch matcher.subject {
+            case .host: "\(matcher.pattern) · host"
+            case .url: "\(matcher.pattern) · full URL"
+            }
+        }
+    }
+}
+
+/// The ordered rule table: first match wins, drag to reorder, double-click to edit.
+struct SettingsView: View {
+    @Bindable var store: RuleStore
+    let discovery: BrowserDiscovery
+    @State private var editing: RoutingRule?
+    @State private var selection: RoutingRule.ID?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            if store.rules.isEmpty {
+                emptyState
+            } else {
+                list
+            }
+            Divider()
+            footer
+        }
+        .sheet(item: $editing) { rule in
+            RuleEditorView(rule: rule, store: store, discovery: discovery)
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            Text("Rules run top to bottom. The first match wins and the link opens there, with no panel.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Toggle("Pause rules", isOn: $store.isPaused)
+                .toggleStyle(.checkbox)
+        }
+        .padding(12)
+    }
+
+    private var list: some View {
+        List(selection: $selection) {
+            ForEach(store.rules) { rule in
+                RuleRow(rule: rule,
+                        isEnabled: enabledBinding(for: rule),
+                        destination: destinationLabel(for: rule.destination))
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) { editing = rule }
+            }
+            .onMove { store.move(fromOffsets: $0, toOffset: $1) }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Text("Every link will ask")
+                .font(.headline)
+            Text("Check “Remember” in the picker when choosing a browser, or create a rule here.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Create Rule") { editing = newRule() }
+                .keyboardShortcut(.defaultAction)
+                .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var footer: some View {
+        HStack(spacing: 6) {
+            Button {
+                editing = newRule()
+            } label: {
+                Image(systemName: "plus")
+            }
+            .accessibilityLabel("Add rule")
+
+            Button {
+                if let selection { store.remove(id: selection) }
+            } label: {
+                Image(systemName: "minus")
+            }
+            .accessibilityLabel("Delete rule")
+            .disabled(selection == nil)
+
+            Spacer()
+            Text("Drag to change precedence")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .padding(10)
+    }
+
+    private func newRule() -> RoutingRule {
+        RoutingRule(
+            name: "New rule",
+            matcher: .host(HostMatcher(host: "", includesSubdomains: true)),
+            destination: RuleDestination(
+                browserBundleID: discovery.browsers.first?.id ?? "", profileID: nil))
+    }
+
+    private func enabledBinding(for rule: RoutingRule) -> Binding<Bool> {
+        Binding(
+            get: { store.rules.first { $0.id == rule.id }?.isEnabled ?? false },
+            set: { enabled in
+                var updated = rule
+                updated.isEnabled = enabled
+                store.update(updated)
+            })
+    }
+
+    /// The mockups show people-facing names, never bundle identifiers.
+    private func destinationLabel(for destination: RuleDestination) -> RuleRow.Destination {
+        guard let browser = discovery.browsers.first(where: { $0.id == destination.browserBundleID }) else {
+            return .unavailable(name: destination.browserBundleID)
+        }
+        guard let profileID = destination.profileID else {
+            return .available(icon: browser.icon, text: browser.name)
+        }
+        guard let profile = browser.profiles.first(where: { $0.id == profileID }) else {
+            return .unavailable(name: browser.name)
+        }
+        return .available(icon: browser.icon, text: "\(browser.name) · \(profile.displayName)")
+    }
+}
+
+private struct RuleRow: View {
+    enum Destination {
+        case available(icon: NSImage, text: String)
+        case unavailable(name: String)
+    }
+
+    let rule: RoutingRule
+    @Binding var isEnabled: Bool
+    let destination: Destination
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Toggle("", isOn: $isEnabled)
+                .toggleStyle(.checkbox)
+                .labelsHidden()
+                .accessibilityLabel("Enable rule \(rule.name)")
+            VStack(alignment: .leading, spacing: 2) {
+                Text(rule.name).fontWeight(.medium)
+                Text(RuleSummary.text(for: rule))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            switch destination {
+            case .available(let icon, let text):
+                HStack(spacing: 6) {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .frame(width: 18, height: 18)
+                        .accessibilityHidden(true)
+                    Text(text)
+                        .font(.caption)
+                }
+            case .unavailable(let name):
+                Label("\(name) not available", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .opacity(rule.isEnabled ? 1 : 0.5)
+        .padding(.vertical, 4)
+    }
+}

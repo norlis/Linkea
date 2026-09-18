@@ -59,67 +59,6 @@ nonisolated enum LinkRouterCore {
         )
     }
 
-    // MARK: - Domain rules
-
-    /// Canonical per-site key for remembered rules: lowercased host with a leading "www."
-    /// removed so both spellings share one rule, while real subdomains stay distinct.
-    static func ruleKey(for url: URL) -> String? {
-        guard let host = url.host()?.lowercased(), !host.isEmpty else { return nil }
-        let key = host.hasPrefix("www.") ? String(host.dropFirst("www.".count)) : host
-        // A bare "www." would otherwise produce an empty key that pins every hostless lookup.
-        return key.isEmpty ? nil : key
-    }
-
-    /// Remembered browser choice per site key. Value semantics; `storage` round-trips through a
-    /// UserDefaults-friendly `[String: String]`.
-    struct DomainRules: Hashable {
-        private(set) var storage: [String: String]
-
-        init() {
-            storage = [:]
-        }
-
-        init(storage: [String: String]) {
-            self.storage = storage
-        }
-
-        func destination(for url: URL) -> String? {
-            guard let key = LinkRouterCore.ruleKey(for: url) else { return nil }
-            return storage[key]
-        }
-
-        mutating func remember(_ browserBundleID: String, for url: URL) {
-            guard let key = LinkRouterCore.ruleKey(for: url) else { return }
-            storage[key] = browserBundleID
-        }
-
-        mutating func forget(for url: URL) {
-            guard let key = LinkRouterCore.ruleKey(for: url) else { return }
-            storage[key] = nil
-        }
-
-        /// One pinned site, ready to list in the menu bar.
-        struct Entry: Hashable {
-            let host: String
-            let bundleID: String
-        }
-
-        var isEmpty: Bool { storage.isEmpty }
-
-        /// Host-sorted so the menu keeps the same order between openings.
-        var entries: [Entry] {
-            storage.keys.sorted().map { Entry(host: $0, bundleID: storage[$0] ?? "") }
-        }
-
-        mutating func forget(host: String) {
-            storage[host] = nil
-        }
-
-        mutating func forgetAll() {
-            storage.removeAll()
-        }
-    }
-
     /// Moves the element matching `id` to the front, keeping the rest in Launch Services order.
     static func moveToFront<Element, ID: Equatable>(_ elements: [Element], matching id: ID?, id keyPath: KeyPath<Element, ID>) -> [Element] {
         guard let id, let index = elements.firstIndex(where: { $0[keyPath: keyPath] == id }) else { return elements }

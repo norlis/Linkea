@@ -1,44 +1,52 @@
 import Foundation
 import Observation
+// SwiftUI defines Array.move(fromOffsets:toOffset:), the exact mutation List.onMove hands us.
+import SwiftUI
 
-/// Observable owner of the remembered "always open this site here" choices.
-///
-/// Every mutation writes straight through to `Preferences`, so the picker, the menu bar list and
-/// the next launch can never disagree about which sites are pinned.
+/// Observable owner of the route table. Every mutation writes straight through to
+/// `Preferences` and rebuilds the compiled table, so the click path never compiles.
 @Observable
 final class RuleStore {
-    private(set) var rules: LinkRouterCore.DomainRules
+    private(set) var rules: [RoutingRule]
+    private(set) var compiled: [CompiledRule]
 
-    init(rules: LinkRouterCore.DomainRules = Preferences.domainRules) {
-        self.rules = rules
+    var isPaused: Bool {
+        didSet { Preferences.rulesPaused = isPaused }
     }
 
-    func destination(for url: URL) -> String? {
-        rules.destination(for: url)
+    init() {
+        // The pre-1.x per-host map is gone by owner decision: removed, never migrated or read.
+        Preferences.defaults.removeObject(forKey: "domain_rules")
+        let stored = Preferences.routingRules
+        rules = stored
+        compiled = RuleCompiler.compile(stored)
+        isPaused = Preferences.rulesPaused
     }
 
-    func remember(_ browserBundleID: String, for url: URL) {
-        rules.remember(browserBundleID, for: url)
+    func add(_ rule: RoutingRule) {
+        rules.append(rule)
         persist()
     }
 
-    func forget(for url: URL) {
-        rules.forget(for: url)
+    func update(_ rule: RoutingRule) {
+        guard let index = rules.firstIndex(where: { $0.id == rule.id }) else { return }
+        rules[index] = rule
         persist()
     }
 
-    func forget(host: String) {
-        rules.forget(host: host)
+    func remove(id: RoutingRule.ID) {
+        rules.removeAll { $0.id == id }
         persist()
     }
 
-    func forgetAll() {
-        rules.forgetAll()
+    func move(fromOffsets source: IndexSet, toOffset destination: Int) {
+        rules.move(fromOffsets: source, toOffset: destination)
         persist()
     }
 
     private func persist() {
-        Preferences.domainRules = rules
-        AppLog.debug("domain rules updated", fields: ["rule.count": String(rules.entries.count)])
+        Preferences.routingRules = rules
+        compiled = RuleCompiler.compile(rules)
+        AppLog.debug("routing rules updated", fields: ["rule.count": String(rules.count)])
     }
 }
