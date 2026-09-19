@@ -163,6 +163,14 @@ struct SettingsView: View {
     @State private var isExporting = false
     @State private var exportDocument: RulesDocument?
     @State private var transferMessage: String?
+    @State private var pendingImport: PendingImport?
+
+    /// An import waiting on the user's review of destinations this Mac cannot open.
+    private struct PendingImport: Identifiable {
+        let id = UUID()
+        let rules: [RoutingRule]
+        let groups: [RuleTransfer.UnresolvedGroup]
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -178,6 +186,18 @@ struct SettingsView: View {
         }
         .sheet(item: $editing) { rule in
             RuleEditorView(rule: rule, store: store, discovery: discovery)
+        }
+        .sheet(item: $pendingImport) { pending in
+            ImportReviewView(
+                groups: pending.groups,
+                discovery: discovery,
+                onCancel: { pendingImport = nil },
+                onImport: { resolutions in
+                    let resolved = RuleTransfer.apply(resolutions, to: pending.rules)
+                    finishImport(resolved, skipped: pending.rules.count - resolved.count)
+                    pendingImport = nil
+                }
+            )
         }
         .fileExporter(isPresented: $isExporting, document: exportDocument,
                       contentType: .json, defaultFilename: "Linkea Rules") { result in
@@ -202,10 +222,16 @@ struct SettingsView: View {
         do {
             // The app is unsandboxed on purpose; the picked URL is readable directly.
             let data = try Data(contentsOf: result.get())
-            let changed = store.importRules(try RuleTransfer.decode(data))
-            transferMessage = changed == 0
-                ? "Nothing new to import — every rule in the file is already in the table."
-                : "\(changed) rule\(changed == 1 ? "" : "s") imported."
+            let decoded = try RuleTransfer.decode(data)
+            let groups = RuleTransfer.analyze(decoded.rules, labels: decoded.destinationLabels) {
+                discovery.canResolve($0)
+            }
+            if groups.isEmpty {
+                finishImport(decoded.rules)
+            } else {
+                AppLog.info("rules import needs review", fields: ["rule.unresolved_count": String(groups.count)])
+                pendingImport = PendingImport(rules: decoded.rules, groups: groups)
+            }
         } catch let error as RuleTransfer.TransferError {
             AppLog.warn("rules import rejected", fields: ["error.type": "TransferError"])
             transferMessage = error.message
@@ -213,6 +239,35 @@ struct SettingsView: View {
             AppLog.error("rules import failed", error: error)
             transferMessage = "Import failed: \(error.localizedDescription)"
         }
+    }
+
+    private func finishImport(_ rules: [RoutingRule], skipped: Int = 0) {
+        let changed = store.importRules(rules)
+        var message = changed == 0
+            ? "Nothing new to import — every rule in the file is already in the table."
+            : "\(changed) rule\(changed == 1 ? "" : "s") imported."
+        if skipped > 0 {
+            message += " \(skipped) skipped."
+        }
+        transferMessage = message
+    }
+
+    /// Human-readable names for every destination in the table, written into the export so an
+    /// importing Mac can name browsers and profiles it does not have.
+    private func exportLabels() -> [String: String] {
+        var labels: [String: String] = [:]
+        for rule in store.rules {
+            let destination = rule.destination
+            guard let browser = discovery.browsers.first(where: { $0.id == destination.browserBundleID })
+            else { continue }
+            if let profileID = destination.profileID {
+                guard let profile = browser.profiles.first(where: { $0.id == profileID }) else { continue }
+                labels[RuleTransfer.labelKey(for: destination)] = "\(browser.name) — \(profile.displayName)"
+            } else {
+                labels[RuleTransfer.labelKey(for: destination)] = browser.name
+            }
+        }
+        return labels
     }
 
     private var header: some View {
@@ -281,7 +336,7 @@ struct SettingsView: View {
 
             Button("Export…") {
                 do {
-                    exportDocument = RulesDocument(data: try RuleTransfer.export(store.rules))
+                    exportDocument = RulesDocument(data: try RuleTransfer.export(store.rules, labels: exportLabels()))
                     isExporting = true
                 } catch {
                     AppLog.error("rules export failed", error: error)

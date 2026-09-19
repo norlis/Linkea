@@ -82,10 +82,6 @@ struct RuleEditorView: View {
         return ""
     }
 
-    private var selectedBrowser: Browser? {
-        discovery.browsers.first { $0.id == rule.destination.browserBundleID }
-    }
-
     private var canSave: Bool {
         guard !rule.destination.browserBundleID.isEmpty else { return false }
         guard isRegex else { return !hostText.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -259,32 +255,43 @@ struct RuleEditorView: View {
     }
 
     private var destinationFields: some View {
-        Group {
-            Picker("Open in", selection: Binding(
-                get: { rule.destination.browserBundleID },
-                set: { newBrowserID in
-                    // A profile belongs to one browser; switching browsers resets to its default.
-                    rule.destination = RuleDestination(browserBundleID: newBrowserID, profileID: nil)
-                })) {
-                ForEach(discovery.browsers) { browser in
-                    HStack(spacing: 6) {
-                        Image(nsImage: browser.icon)
-                            .resizable()
-                            .frame(width: 16, height: 16)
-                            .accessibilityHidden(true)
-                        Text(browser.name)
-                    }
-                    .tag(browser.id)
+        DestinationPickers(destination: $rule.destination, discovery: discovery)
+    }
+}
+
+/// Browser and profile pickers over the installed set, shared by the rule editor and the
+/// import review sheet.
+struct DestinationPickers: View {
+    @Binding var destination: RuleDestination
+    let discovery: BrowserDiscovery
+
+    private var selectedBrowser: Browser? {
+        discovery.browsers.first { $0.id == destination.browserBundleID }
+    }
+
+    var body: some View {
+        Picker("Open in", selection: Binding(
+            get: { destination.browserBundleID },
+            set: { newBrowserID in
+                // A profile belongs to one browser; switching browsers resets to its default.
+                destination = RuleDestination(browserBundleID: newBrowserID, profileID: nil)
+            })) {
+            ForEach(discovery.browsers) { browser in
+                HStack(spacing: 6) {
+                    Image(nsImage: browser.icon)
+                        .resizable()
+                        .frame(width: 16, height: 16)
+                        .accessibilityHidden(true)
+                    Text(browser.name)
                 }
+                .tag(browser.id)
             }
-            if let browser = selectedBrowser, !browser.profiles.isEmpty {
-                Picker("Profile", selection: Binding(
-                    get: { rule.destination.profileID },
-                    set: { rule.destination.profileID = $0 })) {
-                    Text("Default profile").tag(String?.none)
-                    ForEach(browser.profiles) { profile in
-                        Text(profile.displayName).tag(String?.some(profile.id))
-                    }
+        }
+        if let browser = selectedBrowser, !browser.profiles.isEmpty {
+            Picker("Profile", selection: $destination.profileID) {
+                Text("Default profile").tag(String?.none)
+                ForEach(browser.profiles) { profile in
+                    Text(profile.displayName).tag(String?.some(profile.id))
                 }
             }
         }
