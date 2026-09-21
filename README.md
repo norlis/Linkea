@@ -37,6 +37,8 @@ Control-clicking the app no longer works as a shortcut for this — Apple remove
 
 On macOS 27 and later, showing browser profile chips additionally requires granting Linkea **Full Disk Access** (System Settings ▸ Privacy & Security ▸ Full Disk Access, then relaunch): macOS 27's App Data Protection silently blocks reading other browsers' profile metadata without it. Links keep working either way — only the profile chips disappear, and Linkea's settings window points this out when it happens.
 
+After **updating** Linkea, re-grant Full Disk Access even if the toggle still looks enabled: the grant is tied to the exact ad-hoc-signed binary, so a new build invalidates it — remove Linkea from the list and add it back, then relaunch.
+
 ## Building
 
 1. Clone the repository and open `Linkea.xcodeproj` in Xcode.

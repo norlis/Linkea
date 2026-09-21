@@ -140,7 +140,7 @@ private struct GeneralSettingsTab: View {
                 .font(.callout)
                 .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Grant Linkea Full Disk Access and relaunch it. Links keep working either way — only the profile chips are affected.")
+            Text("Grant Linkea Full Disk Access and relaunch it. If Linkea already appears enabled there, remove it and add it again — updating the app invalidates the old grant. Links keep working either way; only the profile chips are affected.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
