@@ -24,6 +24,9 @@ struct PickerView: View {
     /// Browser this site is pinned to, shown as "Always" and already sorted to the top.
     let pinnedBundleID: String?
     @Bindable var state: PickerPanelState
+    /// Whether profiles the picker has shown before are now hidden behind a macOS denial.
+    let showsProfileAccessNotice: Bool
+    let onFixProfileAccess: () -> Void
     let onSelect: (Browser, BrowserProfile?) -> Void
 
     @State private var hoveredBundleID: String?
@@ -58,6 +61,10 @@ struct PickerView: View {
                     ForEach(Array(browsers.enumerated()), id: \.element.id) { index, browser in
                         row(browserIndex: index, browser: browser)
                     }
+                }
+
+                if showsProfileAccessNotice {
+                    profileAccessNotice
                 }
 
                 if state.showsLegend, !legendEntries.isEmpty {
@@ -198,6 +205,32 @@ struct PickerView: View {
             .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
     }
 
+    /// Update-invalidated permission: profiles that were on screen yesterday are unreadable
+    /// today. The whole row is the remedy — one click lands on the settings checklist.
+    private var profileAccessNotice: some View {
+        Button(action: onFixProfileAccess) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+                Text("Profiles blocked by macOS")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text("Fix…")
+                    .font(.caption.weight(.semibold))
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .help("macOS is blocking Linkea from reading browser profiles again. Open the settings checklist to restore access.")
+        .accessibilityLabel("Profiles blocked by macOS")
+        .accessibilityHint("Opens Linkea settings")
+    }
+
     // MARK: - Legend
 
     private var legendEntries: [(key: String, profile: BrowserProfile)] {
@@ -276,6 +309,8 @@ struct PickerView: View {
         browsers: [],
         pinnedBundleID: nil,
         state: PickerPanelState(remember: false),
+        showsProfileAccessNotice: false,
+        onFixProfileAccess: {},
         onSelect: { _, _ in }
     )
 }
@@ -297,6 +332,8 @@ struct PickerView: View {
         ],
         pinnedBundleID: "com.example.safari",
         state: PickerPanelState(remember: true, showsLegend: true),
+        showsProfileAccessNotice: true,
+        onFixProfileAccess: {},
         onSelect: { _, _ in }
     )
 }

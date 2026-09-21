@@ -26,6 +26,8 @@ enum PermissionReset {
         for command in commands(bundleID: bundleID) {
             guard await run(command) else { continue }
             AppLog.info("tcc approvals reset", fields: ["reset.service": command[2]])
+            // The relaunched instance picks this up to guide the user to the consent dialogs.
+            Preferences.accessRepairPending = true
             await relaunch()
             return true
         }

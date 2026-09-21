@@ -21,6 +21,9 @@ final class BrowserDiscovery {
     /// True when macOS refused to let us read some browser's profile metadata (macOS 27 App
     /// Data Protection without Full Disk Access); the settings window explains the remedy.
     private(set) var profileAccessDenied = false
+    /// True when a denial hides profiles the picker has shown before — the update-invalidated
+    /// grant case, which the picker surfaces so the fix is one click away.
+    private(set) var profileAccessRegressed = false
 
     func refresh() {
         let candidates = NSWorkspace.shared.urlsForApplications(toOpen: LinkRouterCore.probeURL).compactMap { appURL -> LinkRouterCore.BrowserCandidate? in
@@ -33,9 +36,15 @@ final class BrowserDiscovery {
         }
         let deduped = LinkRouterCore.dedupedBrowsers(candidates, excluding: Bundle.main.bundleIdentifier ?? "")
         var accessDenied = false
+        var outcomes: [ProfileScanOutcome] = []
         browsers = deduped.map { candidate in
             let scan = profileScan(forBundleID: candidate.bundleID)
             accessDenied = accessDenied || scan.accessDenied
+            outcomes.append(ProfileScanOutcome(
+                bundleID: candidate.bundleID,
+                hasProfiles: !scan.profiles.isEmpty,
+                accessDenied: scan.accessDenied
+            ))
             return Browser(
                 id: candidate.bundleID,
                 name: candidate.displayName,
@@ -45,6 +54,19 @@ final class BrowserDiscovery {
             )
         }
         profileAccessDenied = accessDenied
+        if !accessDenied, Preferences.accessRepairPending {
+            Preferences.accessRepairPending = false
+            AppLog.info("profile access repair completed")
+        }
+        let assessment = ProfileAccessTracker.assess(
+            previouslyProfiled: Preferences.profiledBrowserBundleIDs,
+            outcomes: outcomes
+        )
+        Preferences.profiledBrowserBundleIDs = assessment.knownProfiledBundleIDs
+        if assessment.showsBlockedNotice, !profileAccessRegressed {
+            AppLog.warn("profile access regressed, picker will warn")
+        }
+        profileAccessRegressed = assessment.showsBlockedNotice
         AppLog.debug("browser list refreshed", fields: ["browser.count": String(browsers.count)])
     }
 

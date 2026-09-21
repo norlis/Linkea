@@ -18,6 +18,22 @@ struct PreferencesTests {
         }
     }
 
+    @Test func profiledBrowsersRoundTripAndDefaultToEmpty() throws {
+        try withIsolatedDefaults {
+            #expect(Preferences.profiledBrowserBundleIDs.isEmpty)
+            Preferences.profiledBrowserBundleIDs = ["com.google.Chrome", "org.mozilla.firefox"]
+            #expect(Preferences.profiledBrowserBundleIDs == ["com.google.Chrome", "org.mozilla.firefox"])
+        }
+    }
+
+    @Test func accessRepairPendingRoundTripsAndDefaultsToFalse() throws {
+        try withIsolatedDefaults {
+            #expect(!Preferences.accessRepairPending)
+            Preferences.accessRepairPending = true
+            #expect(Preferences.accessRepairPending)
+        }
+    }
+
     @Test func hiddenBrowsersRoundTripAndDefaultToEmpty() throws {
         try withIsolatedDefaults {
             #expect(Preferences.hiddenBrowserBundleIDs.isEmpty)

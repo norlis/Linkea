@@ -19,6 +19,7 @@ final class PickerPanelController: NSObject, NSWindowDelegate {
     private let panel: PickerPanel
     private let discovery: BrowserDiscovery
     private let ruleStore: RuleStore
+    private let openSettings: () -> Void
     private var clickOutsideMonitor: Any?
     private var keyMonitor: Any?
     private var warnedAboutMissingClickOutsideMonitor = false
@@ -30,9 +31,10 @@ final class PickerPanelController: NSObject, NSWindowDelegate {
     private var presentedMouseLocation: CGPoint = .zero
     private var state = PickerPanelState(remember: false)
 
-    init(discovery: BrowserDiscovery, ruleStore: RuleStore) {
+    init(discovery: BrowserDiscovery, ruleStore: RuleStore, openSettings: @escaping () -> Void) {
         self.discovery = discovery
         self.ruleStore = ruleStore
+        self.openSettings = openSettings
         panel = PickerPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         super.init()
         panel.isFloatingPanel = true
@@ -66,7 +68,12 @@ final class PickerPanelController: NSObject, NSWindowDelegate {
             urls: urls,
             browsers: browsers,
             pinnedBundleID: pinnedBundleID,
-            state: state
+            state: state,
+            showsProfileAccessNotice: discovery.profileAccessRegressed,
+            onFixProfileAccess: { [weak self] in
+                self?.dismiss()
+                self?.openSettings()
+            }
         ) { [weak self] browser, profile in
             self?.choose(browser, profile: profile)
         }

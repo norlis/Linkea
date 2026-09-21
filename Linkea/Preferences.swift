@@ -10,6 +10,8 @@ enum Preferences {
         static let routingRules = "routing_rules"
         static let rulesPaused = "rules_paused"
         static let hiddenBrowsers = "hidden_browsers"
+        static let profiledBrowsers = "profiled_browsers"
+        static let accessRepairPending = "access_repair_pending"
     }
 
     /// Swappable so tests can point the accessors at an isolated suite instead of the user's
@@ -62,6 +64,20 @@ enum Preferences {
     static var hiddenBrowserBundleIDs: Set<String> {
         get { Set(defaults.stringArray(forKey: Keys.hiddenBrowsers) ?? []) }
         set { defaults.set(newValue.sorted(), forKey: Keys.hiddenBrowsers) }
+    }
+
+    /// Browsers whose profiles the picker has actually shown, so a later permission denial can
+    /// be told apart from "never had profiles". Stored sorted so the persisted value is stable.
+    static var profiledBrowserBundleIDs: Set<String> {
+        get { Set(defaults.stringArray(forKey: Keys.profiledBrowsers) ?? []) }
+        set { defaults.set(newValue.sorted(), forKey: Keys.profiledBrowsers) }
+    }
+
+    /// Set while a permission repair (reset + relaunch) is in flight, so after the relaunch the
+    /// checklist shows approving the consent dialogs as the one remaining step.
+    static var accessRepairPending: Bool {
+        get { defaults.bool(forKey: Keys.accessRepairPending) }
+        set { defaults.set(newValue, forKey: Keys.accessRepairPending) }
     }
 
     static var onboardingCompleted: Bool {

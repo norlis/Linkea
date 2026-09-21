@@ -34,6 +34,17 @@ struct WebURLFilteringTests {
     }
 }
 
+struct StaleInstanceTests {
+    @Test func everyOtherInstanceIsStaleAndOwnPIDNever() {
+        #expect(LinkRouterCore.staleInstancePIDs(ownPID: 42, runningPIDs: [7, 42, 99]) == [7, 99])
+    }
+
+    @Test func aLoneInstanceHasNothingToTerminate() {
+        #expect(LinkRouterCore.staleInstancePIDs(ownPID: 42, runningPIDs: [42]).isEmpty)
+        #expect(LinkRouterCore.staleInstancePIDs(ownPID: 42, runningPIDs: []).isEmpty)
+    }
+}
+
 struct BrowserDeduplicationTests {
     private func candidate(_ bundleID: String, name: String? = nil) -> LinkRouterCore.BrowserCandidate {
         LinkRouterCore.BrowserCandidate(

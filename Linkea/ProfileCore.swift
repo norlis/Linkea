@@ -39,6 +39,64 @@ nonisolated struct BrowserProfile: Hashable, Identifiable {
     }
 }
 
+/// One browser's profile scan reduced to what access tracking needs.
+nonisolated struct ProfileScanOutcome {
+    let bundleID: String
+    let hasProfiles: Bool
+    let accessDenied: Bool
+}
+
+/// Detects the macOS 27 regression where an update silently invalidates the app-data grant:
+/// profiles that were visible on a previous run now hide behind a permission denial. A first-run
+/// denial is not a regression — onboarding already covers it.
+nonisolated enum ProfileAccessTracker {
+    struct Assessment: Equatable {
+        let showsBlockedNotice: Bool
+        let knownProfiledBundleIDs: Set<String>
+    }
+
+    static func assess(previouslyProfiled: Set<String>, outcomes: [ProfileScanOutcome]) -> Assessment {
+        var known = previouslyProfiled
+        var regressed = false
+        for outcome in outcomes {
+            if outcome.accessDenied {
+                // Membership survives a denial: the profiles are unreadable, not gone, and the
+                // notice must keep firing across relaunches until access is restored.
+                regressed = regressed || previouslyProfiled.contains(outcome.bundleID)
+            } else if outcome.hasProfiles {
+                known.insert(outcome.bundleID)
+            } else {
+                // A clean empty scan means the user really removed the profiles.
+                known.remove(outcome.bundleID)
+            }
+        }
+        return Assessment(showsBlockedNotice: regressed, knownProfiledBundleIDs: known)
+    }
+}
+
+/// Which single next action the settings checklist should offer for profile access. One step at
+/// a time: three parallel buttons let people run the remedies in the wrong order.
+nonisolated enum ProfileAccessGuide {
+    enum Step: Equatable {
+        /// Reads work; nothing to do.
+        case done
+        /// No approval exists yet: attempting the read makes macOS show the consent dialog.
+        case request
+        /// A reset just relaunched the app: approving the consent dialogs is all that is left.
+        case approvePrompts
+        /// The stored approval no longer matches this binary (or a plain request already changed
+        /// nothing): only a reset moves forward — macOS never re-prompts over a stale record.
+        case repair
+    }
+
+    static func step(accessDenied: Bool, regressed: Bool, requestAttempted: Bool, repairPending: Bool) -> Step {
+        guard accessDenied else { return .done }
+        if repairPending { return .approvePrompts }
+        if regressed || requestAttempted { return .repair }
+        return .request
+    }
+}
+
 /// Pure profile logic — parsers and argument builders with no file or AppKit access,
 /// so every branch is unit-testable with string fixtures.
 nonisolated enum ProfileCore {

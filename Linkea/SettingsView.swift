@@ -107,6 +107,63 @@ private struct GeneralSettingsTab: View {
 
     @State private var showResetConfirmation = false
     @State private var resetCommandCopied = false
+    @State private var requestAttempted = false
+
+    /// One next action at a time: parallel buttons let people run the remedies in the wrong
+    /// order, and a stale approval silently swallows a plain re-request.
+    private var accessStep: ProfileAccessGuide.Step {
+        ProfileAccessGuide.step(
+            accessDenied: discovery.profileAccessDenied,
+            regressed: discovery.profileAccessRegressed,
+            requestAttempted: requestAttempted,
+            repairPending: Preferences.accessRepairPending)
+    }
+
+    private var accessStepDetail: LocalizedStringKey {
+        switch accessStep {
+        case .done:
+            "Profiles are readable; the picker shows their chips."
+        case .request:
+            "macOS asks for permission the first time Linkea reads a browser's profiles. Request access, then click Allow on the system dialog."
+        case .approvePrompts:
+            "Almost done — Linkea relaunched with a clean slate. Approve the macOS dialogs asking for access. If none appeared, request access again."
+        case .repair:
+            "The old approval no longer matches this copy of Linkea — after an update it can look enabled in System Settings and still be dead. Repairing resets it and relaunches Linkea; approve the dialogs when it comes back."
+        }
+    }
+
+    @ViewBuilder private var accessStepActions: some View {
+        switch accessStep {
+        case .done:
+            EmptyView()
+        case .request:
+            Button("Request Access") { requestAccess() }
+                .buttonStyle(.glassProminent)
+        case .approvePrompts:
+            HStack(spacing: 8) {
+                Button("Request Access") { requestAccess() }
+                    .buttonStyle(.glassProminent)
+                Button("Reset Again…") { showResetConfirmation = true }
+            }
+        case .repair:
+            HStack(spacing: 8) {
+                Button("Repair Access…") { showResetConfirmation = true }
+                    .buttonStyle(.glassProminent)
+                Button("Open Privacy & Security") {
+                    if let url = Self.privacySettingsURL {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Attempting the read IS the request: macOS only prompts on access. A request that changes
+    /// nothing means a stale approval swallowed it, and the step escalates to repair.
+    private func requestAccess() {
+        discovery.refresh()
+        requestAttempted = discovery.profileAccessDenied
+    }
 
     private var profileDataStatus: RequirementStatus {
         SetupRequirements.profileDataStatus(
@@ -135,26 +192,9 @@ private struct GeneralSettingsTab: View {
                 RequirementRow(
                     status: profileDataStatus,
                     title: "Browser profile data",
-                    detail: profileDataStatus == .satisfied
-                        ? "Profiles are readable; the picker shows their chips."
-                        : "macOS is blocking Linkea from reading browser profiles. Request access and approve the system prompts. After an app update the old approvals stop matching even if they look enabled — reset them first."
+                    detail: accessStepDetail
                 ) {
-                    if profileDataStatus == .actionNeeded {
-                        HStack(spacing: 8) {
-                            // Attempting the read IS the request: macOS only prompts on access.
-                            Button("Request Access") {
-                                discovery.refresh()
-                            }
-                            Button("Reset macOS Permissions…") {
-                                showResetConfirmation = true
-                            }
-                            Button("Open Privacy & Security") {
-                                if let url = Self.privacySettingsURL {
-                                    NSWorkspace.shared.open(url)
-                                }
-                            }
-                        }
-                    }
+                    accessStepActions
                 }
             }
 
@@ -177,7 +217,7 @@ private struct GeneralSettingsTab: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .alert("Reset macOS Permissions?", isPresented: $showResetConfirmation) {
+        .alert("Repair macOS Permissions?", isPresented: $showResetConfirmation) {
             Button("Reset and Relaunch", role: .destructive) {
                 Task {
                     if await PermissionReset.performResetAndRelaunch() == false {

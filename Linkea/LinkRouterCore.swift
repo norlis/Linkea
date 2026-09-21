@@ -47,6 +47,13 @@ nonisolated enum LinkRouterCore {
         }
     }
 
+    /// PIDs of other running copies of the app, which the freshly launched instance tells to
+    /// quit. The newest instance wins: it is the binary the user just built or updated, while a
+    /// lingering older one would silently swallow the links Launch Services delivers.
+    static func staleInstancePIDs(ownPID: Int32, runningPIDs: [Int32]) -> [Int32] {
+        runningPIDs.filter { $0 != ownPID }
+    }
+
     /// Origin (bottom-left, global AppKit coordinates) that centers the panel horizontally on the
     /// cursor and floats it just above, clamped to the screen. When the screen is smaller than the
     /// panel, the bottom-left corner wins so the first browser icons stay reachable.

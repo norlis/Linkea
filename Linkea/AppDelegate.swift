@@ -16,9 +16,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Kept for the app's lifetime; never cancelled because the delegate never dies.
     private var windowCloseTask: Task<Void, Never>?
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Before URLs can arrive: Launch Services hands links to whichever instance is running,
+        // and a stale one (crashed debugger, permission-repair relaunch) would swallow them.
+        terminateStaleInstances()
+    }
+
+    /// The newest launch wins. Polite quit first; anything that ignores it (a hung instance) is
+    /// force-quit after a grace period — Linkea holds no state that a kill could corrupt.
+    private func terminateStaleInstances() {
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+        let stalePIDs = Set(LinkRouterCore.staleInstancePIDs(
+            ownPID: ProcessInfo.processInfo.processIdentifier,
+            runningPIDs: running.map(\.processIdentifier)))
+        let stale = running.filter { stalePIDs.contains($0.processIdentifier) }
+        guard !stale.isEmpty else { return }
+        AppLog.warn("stale instances terminated", fields: ["instance.count": String(stale.count)])
+        for instance in stale where !instance.terminate() {
+            _ = instance.forceTerminate()
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            for instance in stale where !instance.isTerminated {
+                _ = instance.forceTerminate()
+            }
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         discovery.refresh()
-        pickerController = PickerPanelController(discovery: discovery, ruleStore: ruleStore)
+        pickerController = PickerPanelController(discovery: discovery, ruleStore: ruleStore) { [weak self] in
+            self?.showSettings()
+        }
         // .map strips the non-Sendable Notification before it crosses into this task.
         windowCloseTask = Task { [weak self] in
             for await _ in NotificationCenter.default.notifications(named: NSWindow.willCloseNotification).map({ _ in () }) {
