@@ -35,6 +35,8 @@ The app is **ad-hoc signed, not notarized** — there is no paid Apple Developer
 
 Control-clicking the app no longer works as a shortcut for this — Apple removed that bypass in macOS Sequoia. If you would rather not trust an unnotarized build, build it yourself from source with the steps below; the result is identical.
 
+On macOS 27 and later, showing browser profile chips additionally requires granting Linkea **Full Disk Access** (System Settings ▸ Privacy & Security ▸ Full Disk Access, then relaunch): macOS 27's App Data Protection silently blocks reading other browsers' profile metadata without it. Links keep working either way — only the profile chips disappear, and Linkea's settings window points this out when it happens.
+
 ## Building
 
 1. Clone the repository and open `Linkea.xcodeproj` in Xcode.

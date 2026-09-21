@@ -26,6 +26,7 @@ nonisolated struct RulesDocument: FileDocument {
 /// triggers AppKit's "Update Constraints in Window pass" loop.
 struct SettingsRootView: View {
     let manager: DefaultBrowserManager
+    let loginItems: LoginItemManager
     let discovery: BrowserDiscovery
     let store: RuleStore
     let onTryIt: () -> Void
@@ -33,7 +34,7 @@ struct SettingsRootView: View {
     var body: some View {
         TabView {
             Tab("General", systemImage: "gearshape") {
-                GeneralSettingsTab(manager: manager, discovery: discovery, onTryIt: onTryIt)
+                GeneralSettingsTab(manager: manager, loginItems: loginItems, discovery: discovery, onTryIt: onTryIt)
             }
             Tab("Rules", systemImage: "list.bullet.rectangle") {
                 SettingsView(store: store, discovery: discovery)
@@ -47,8 +48,13 @@ struct SettingsRootView: View {
 /// default browser), a picker preview, and the experimental Safari profile mapping.
 private struct GeneralSettingsTab: View {
     let manager: DefaultBrowserManager
+    let loginItems: LoginItemManager
     let discovery: BrowserDiscovery
     let onTryIt: () -> Void
+
+    // Deep link into System Settings; there is no API to open this pane programmatically.
+    private static let fullDiskAccessSettingsURL =
+        URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
 
     // Seeded from Preferences (the only config store) and written back through the binding,
     // following the SafariProfilesSettingsView pattern.
@@ -79,7 +85,27 @@ private struct GeneralSettingsTab: View {
                 )
                 .foregroundStyle(manager.isDefault ? .green : .secondary)
 
+                Toggle("Launch Linkea at login", isOn: Binding(
+                    get: { loginItems.isEnabled },
+                    set: { loginItems.setEnabled($0) }))
+                    .toggleStyle(.checkbox)
+                if loginItems.requiresApproval {
+                    HStack(spacing: 6) {
+                        Text("Waiting for your approval in System Settings.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                        Button("Open Login Items Settings") {
+                            loginItems.openLoginItemsSettings()
+                        }
+                        .font(.caption)
+                    }
+                }
+
                 Divider()
+
+                if discovery.profileAccessDenied {
+                    profileAccessNotice
+                }
 
                 browsersSection
 
@@ -91,10 +117,42 @@ private struct GeneralSettingsTab: View {
                 HStack {
                     Button("Try It", action: onTryIt)
                     Spacer()
+                    Text(Self.versionText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .padding(28)
         }
+    }
+
+    /// Releases show the git tag: the release workflow injects it as MARKETING_VERSION.
+    private static var versionText: String {
+        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        let build = Bundle.main.object(forInfoDictionaryKey: kCFBundleVersionKey as String) as? String ?? "—"
+        return "Linkea \(short) (\(build))"
+    }
+
+    private var profileAccessNotice: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("macOS is blocking access to browser profile data, so profiles can't be shown.",
+                  systemImage: "exclamationmark.triangle")
+                .font(.callout)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Grant Linkea Full Disk Access and relaunch it. Links keep working either way — only the profile chips are affected.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Open Full Disk Access Settings") {
+                if let url = Self.fullDiskAccessSettingsURL {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(.orange.opacity(0.12), in: .rect(cornerRadius: 8))
     }
 
     private var browsersSection: some View {

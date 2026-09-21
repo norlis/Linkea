@@ -6,6 +6,7 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let discovery = BrowserDiscovery()
     let defaultBrowserManager = DefaultBrowserManager()
+    let loginItemManager = LoginItemManager()
     let ruleStore = RuleStore()
 
     private var pickerController: PickerPanelController?
@@ -128,6 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let view = SettingsRootView(
             manager: defaultBrowserManager,
+            loginItems: loginItemManager,
             discovery: discovery,
             store: ruleStore,
             onTryIt: { [weak self] in

@@ -18,6 +18,9 @@ struct Browser: Identifiable, Hashable {
 @Observable
 final class BrowserDiscovery {
     private(set) var browsers: [Browser] = []
+    /// True when macOS refused to let us read some browser's profile metadata (macOS 27 App
+    /// Data Protection without Full Disk Access); the settings window explains the remedy.
+    private(set) var profileAccessDenied = false
 
     func refresh() {
         let candidates = NSWorkspace.shared.urlsForApplications(toOpen: LinkRouterCore.probeURL).compactMap { appURL -> LinkRouterCore.BrowserCandidate? in
@@ -29,15 +32,19 @@ final class BrowserDiscovery {
             )
         }
         let deduped = LinkRouterCore.dedupedBrowsers(candidates, excluding: Bundle.main.bundleIdentifier ?? "")
+        var accessDenied = false
         browsers = deduped.map { candidate in
-            Browser(
+            let scan = profileScan(forBundleID: candidate.bundleID)
+            accessDenied = accessDenied || scan.accessDenied
+            return Browser(
                 id: candidate.bundleID,
                 name: candidate.displayName,
                 appURL: candidate.appURL,
                 icon: NSWorkspace.shared.icon(forFile: candidate.appURL.path),
-                profiles: profiles(forBundleID: candidate.bundleID)
+                profiles: scan.profiles
             )
         }
+        profileAccessDenied = accessDenied
         AppLog.debug("browser list refreshed", fields: ["browser.count": String(browsers.count)])
     }
 
@@ -75,13 +82,13 @@ final class BrowserDiscovery {
         }
     }
 
-    private func profiles(forBundleID bundleID: String) -> [BrowserProfile] {
+    private func profileScan(forBundleID bundleID: String) -> ProfileScan {
         if bundleID == SafariProfileLauncher.safariBundleID {
-            return SafariProfileLauncher.configuredProfiles()
+            return ProfileScan(profiles: SafariProfileLauncher.configuredProfiles(), accessDenied: false)
         }
-        let found = ProfileDiscovery.profiles(forBundleID: bundleID)
+        let scan = ProfileDiscovery.scan(forBundleID: bundleID)
         // A single profile adds no choice — the plain icon already opens it.
-        return found.count >= 2 ? found : []
+        return ProfileScan(profiles: scan.profiles.count >= 2 ? scan.profiles : [], accessDenied: scan.accessDenied)
     }
 }
 
