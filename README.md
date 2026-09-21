@@ -35,9 +35,9 @@ The app is **ad-hoc signed, not notarized** — there is no paid Apple Developer
 
 Control-clicking the app no longer works as a shortcut for this — Apple removed that bypass in macOS Sequoia. If you would rather not trust an unnotarized build, build it yourself from source with the steps below; the result is identical.
 
-On macOS 27 and later, showing browser profile chips additionally requires granting Linkea **Full Disk Access** (System Settings ▸ Privacy & Security ▸ Full Disk Access, then relaunch): macOS 27's App Data Protection silently blocks reading other browsers' profile metadata without it. Links keep working either way — only the profile chips disappear, and Linkea's settings window points this out when it happens.
+On macOS 27 and later, showing browser profile chips additionally requires approving Linkea's access to each browser's data: macOS 27's App Data Protection silently blocks reading other browsers' profile metadata otherwise, and Full Disk Access is **not** enough — the grants are per-app toggles listed under Linkea in System Settings ▸ Privacy & Security. Links keep working either way — only the profile chips disappear, and Linkea's settings window points this out when it happens.
 
-After **updating** Linkea, re-grant Full Disk Access even if the toggle still looks enabled: the grant is tied to the exact ad-hoc-signed binary, so a new build invalidates it — remove Linkea from the list and add it back, then relaunch.
+After **updating** Linkea, those approvals stop matching even though the toggles still look enabled, because they are tied to the exact ad-hoc-signed binary. Run `tccutil reset All com.norlisviamonte.Linkea` in Terminal, relaunch Linkea, and approve the prompts again.
 
 ## Building
 

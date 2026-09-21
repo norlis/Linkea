@@ -24,15 +24,21 @@ enum ProfileDiscovery {
         return .empty
     }
 
-    /// True when the failure is macOS refusing access, as opposed to the file being absent
-    /// or broken.
+    /// True when the failure is macOS refusing access, as opposed to the file being absent or
+    /// broken. Walks the underlying-error chain: macOS 27's kernel-level denial can surface as a
+    /// generic Cocoa error wrapping the POSIX EPERM.
     static func isPermissionDenial(_ error: any Error) -> Bool {
-        if let cocoa = error as? CocoaError, cocoa.code == .fileReadNoPermission {
-            return true
+        var current: NSError? = error as NSError
+        while let nsError = current {
+            if nsError.domain == NSCocoaErrorDomain, nsError.code == CocoaError.fileReadNoPermission.rawValue {
+                return true
+            }
+            if nsError.domain == NSPOSIXErrorDomain, nsError.code == Int(EACCES) || nsError.code == Int(EPERM) {
+                return true
+            }
+            current = nsError.userInfo[NSUnderlyingErrorKey] as? NSError
         }
-        let nsError = error as NSError
-        return nsError.domain == NSPOSIXErrorDomain
-            && (nsError.code == Int(EACCES) || nsError.code == Int(EPERM))
+        return false
     }
 
     private static var applicationSupportURL: URL {

@@ -52,9 +52,10 @@ private struct GeneralSettingsTab: View {
     let discovery: BrowserDiscovery
     let onTryIt: () -> Void
 
-    // Deep link into System Settings; there is no API to open this pane programmatically.
-    private static let fullDiskAccessSettingsURL =
-        URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+    // Deep link into System Settings; the per-app data toggles have no dedicated anchor, so
+    // this lands on the Privacy & Security root.
+    private static let privacySettingsURL =
+        URL(string: "x-apple.systempreferences:com.apple.preference.security")
 
     // Seeded from Preferences (the only config store) and written back through the binding,
     // following the SafariProfilesSettingsView pattern.
@@ -140,12 +141,12 @@ private struct GeneralSettingsTab: View {
                 .font(.callout)
                 .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Grant Linkea Full Disk Access and relaunch it. If Linkea already appears enabled there, remove it and add it again — updating the app invalidates the old grant. Links keep working either way; only the profile chips are affected.")
+            Text("In System Settings › Privacy & Security, allow Linkea to access each browser's data (the browsers are listed under Linkea), then relaunch. After updating Linkea the old approvals stop matching even though they look enabled — run “tccutil reset All com.norlisviamonte.Linkea” in Terminal, relaunch, and approve again. Links keep working either way; only the profile chips are affected.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Open Full Disk Access Settings") {
-                if let url = Self.fullDiskAccessSettingsURL {
+            Button("Open Privacy & Security Settings") {
+                if let url = Self.privacySettingsURL {
                     NSWorkspace.shared.open(url)
                 }
             }
