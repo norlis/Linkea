@@ -75,38 +75,9 @@ private struct GeneralSettingsTab: View {
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
 
-                Button("Set Linkea as Default Browser") {
-                    manager.requestDefault()
-                }
-                .buttonStyle(.glassProminent)
-
-                Label(
-                    manager.isDefault ? "Linkea is your default browser" : "Linkea is not the default browser yet",
-                    systemImage: manager.isDefault ? "checkmark.circle.fill" : "circle.dashed"
-                )
-                .foregroundStyle(manager.isDefault ? .green : .secondary)
-
-                Toggle("Launch Linkea at login", isOn: Binding(
-                    get: { loginItems.isEnabled },
-                    set: { loginItems.setEnabled($0) }))
-                    .toggleStyle(.checkbox)
-                if loginItems.requiresApproval {
-                    HStack(spacing: 6) {
-                        Text("Waiting for your approval in System Settings.")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                        Button("Open Login Items Settings") {
-                            loginItems.openLoginItemsSettings()
-                        }
-                        .font(.caption)
-                    }
-                }
+                requirementsChecklist
 
                 Divider()
-
-                if discovery.profileAccessDenied {
-                    profileAccessNotice
-                }
 
                 browsersSection
 
@@ -134,26 +105,95 @@ private struct GeneralSettingsTab: View {
         return "Linkea \(short) (\(build))"
     }
 
-    private var profileAccessNotice: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("macOS is blocking access to browser profile data, so profiles can't be shown.",
-                  systemImage: "exclamationmark.triangle")
-                .font(.callout)
-                .foregroundStyle(.orange)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("In System Settings › Privacy & Security, allow Linkea to access each browser's data (the browsers are listed under Linkea), then relaunch. After updating Linkea the old approvals stop matching even though they look enabled — run “tccutil reset All com.norlisviamonte.Linkea” in Terminal, relaunch, and approve again. Links keep working either way; only the profile chips are affected.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Open Privacy & Security Settings") {
-                if let url = Self.privacySettingsURL {
-                    NSWorkspace.shared.open(url)
+    @State private var showResetConfirmation = false
+    @State private var resetCommandCopied = false
+
+    private var profileDataStatus: RequirementStatus {
+        SetupRequirements.profileDataStatus(
+            accessDenied: discovery.profileAccessDenied,
+            browsersWithProfiles: discovery.browsers.count { !$0.profiles.isEmpty })
+    }
+
+    private var requirementsChecklist: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            RequirementRow(
+                status: manager.isDefault ? .satisfied : .actionNeeded,
+                title: "Default browser",
+                detail: manager.isDefault
+                    ? "Linkea receives every link you click."
+                    : "macOS only sends link clicks to the default browser."
+            ) {
+                if !manager.isDefault {
+                    Button("Set Linkea as Default Browser") {
+                        manager.requestDefault()
+                    }
+                    .buttonStyle(.glassProminent)
+                }
+            }
+
+            if profileDataStatus != .notApplicable {
+                RequirementRow(
+                    status: profileDataStatus,
+                    title: "Browser profile data",
+                    detail: profileDataStatus == .satisfied
+                        ? "Profiles are readable; the picker shows their chips."
+                        : "macOS is blocking Linkea from reading browser profiles. Request access and approve the system prompts. After an app update the old approvals stop matching even if they look enabled — reset them first."
+                ) {
+                    if profileDataStatus == .actionNeeded {
+                        HStack(spacing: 8) {
+                            // Attempting the read IS the request: macOS only prompts on access.
+                            Button("Request Access") {
+                                discovery.refresh()
+                            }
+                            Button("Reset macOS Permissions…") {
+                                showResetConfirmation = true
+                            }
+                            Button("Open Privacy & Security") {
+                                if let url = Self.privacySettingsURL {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle("Launch Linkea at login", isOn: Binding(
+                    get: { loginItems.isEnabled },
+                    set: { loginItems.setEnabled($0) }))
+                    .toggleStyle(.checkbox)
+                if loginItems.requiresApproval {
+                    HStack(spacing: 6) {
+                        Text("Waiting for your approval in System Settings.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                        Button("Open Login Items Settings") {
+                            loginItems.openLoginItemsSettings()
+                        }
+                        .font(.caption)
+                    }
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(.orange.opacity(0.12), in: .rect(cornerRadius: 8))
+        .alert("Reset macOS Permissions?", isPresented: $showResetConfirmation) {
+            Button("Reset and Relaunch", role: .destructive) {
+                Task {
+                    if await PermissionReset.performResetAndRelaunch() == false {
+                        resetCommandCopied = true
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("macOS will ask you to approve access again and Linkea will relaunch. This may also clear the Accessibility approval used for Safari profiles.")
+        }
+        .alert("Command Copied", isPresented: $resetCommandCopied) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("The reset could not run automatically. The Terminal command is on the clipboard — paste it into Terminal, run it, and relaunch Linkea.")
+        }
     }
 
     private var browsersSection: some View {
@@ -192,6 +232,49 @@ private struct GeneralSettingsTab: View {
                 Preferences.hiddenBrowserBundleIDs = hiddenBrowserIDs
             }
         )
+    }
+}
+
+/// State of one setup requirement, pure so the mapping is testable.
+nonisolated enum RequirementStatus {
+    case satisfied
+    case actionNeeded
+    case notApplicable
+}
+
+nonisolated enum SetupRequirements {
+    /// Profile data needs attention when macOS denied the reads; it is moot when no installed
+    /// browser exposes multiple profiles anyway. Denial wins: a denied read also reports zero
+    /// profiles, and hiding the row then would hide the remedy.
+    static func profileDataStatus(accessDenied: Bool, browsersWithProfiles: Int) -> RequirementStatus {
+        if accessDenied { return .actionNeeded }
+        return browsersWithProfiles > 0 ? .satisfied : .notApplicable
+    }
+}
+
+/// One row of the setup checklist: status icon, explanation, and the actions that fix it.
+private struct RequirementRow<Actions: View>: View {
+    let status: RequirementStatus
+    let title: LocalizedStringKey
+    let detail: LocalizedStringKey
+    @ViewBuilder let actions: Actions
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: status == .satisfied ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(status == .satisfied ? AnyShapeStyle(.green) : AnyShapeStyle(.orange))
+                .accessibilityLabel(status == .satisfied ? "Completed" : "Action needed")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .fontWeight(.medium)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                actions
+            }
+            Spacer(minLength: 0)
+        }
     }
 }
 
