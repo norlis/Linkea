@@ -21,6 +21,9 @@ enum ProfileDiscovery {
         if bundleID.hasPrefix("org.mozilla.firefox") {
             return firefoxProfiles(bundleID: bundleID)
         }
+        if bundleID == ProfileCore.arcBundleID {
+            return arcSpaces(bundleID: bundleID)
+        }
         return .empty
     }
 
@@ -45,22 +48,42 @@ enum ProfileDiscovery {
         FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Application Support")
     }
 
-    private static func chromiumProfiles(subpath: String, bundleID: String) -> ProfileScan {
-        let localStateURL = applicationSupportURL.appending(path: subpath).appending(path: "Local State")
-        let data: Data
+    /// Which browser file a log line is about — the read messages stay static across browsers.
+    private enum MetadataSource: String {
+        case chromiumLocalState = "chromium_local_state"
+        case firefoxProfilesINI = "firefox_profiles_ini"
+        case arcSidebar = "arc_sidebar"
+    }
+
+    private enum MetadataRead {
+        case contents(Data)
+        /// The scan is already decided — absent, blocked, or unreadable — and was logged.
+        case settled(ProfileScan)
+    }
+
+    private static func readMetadata(subpath: String, source: MetadataSource, bundleID: String) -> MetadataRead {
+        let fields = ["app.bundle_id": bundleID, "profile.source": source.rawValue]
         do {
-            data = try Data(contentsOf: localStateURL)
+            return .contents(try Data(contentsOf: applicationSupportURL.appending(path: subpath)))
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
             // Expected for an installed browser that has never run — not an error.
-            AppLog.debug("no chromium local state present", fields: ["app.bundle_id": bundleID])
-            return .empty
+            AppLog.debug("browser profile metadata absent", fields: fields)
+            return .settled(.empty)
         } catch where isPermissionDenial(error) {
             // Degraded but recovered: the settings window explains it and links to Full Disk Access.
-            AppLog.warn("chromium profile data blocked by macos", fields: ["app.bundle_id": bundleID])
-            return ProfileScan(profiles: [], accessDenied: true)
+            AppLog.warn("browser profile metadata blocked by macos", fields: fields)
+            return .settled(ProfileScan(profiles: [], accessDenied: true))
         } catch {
-            AppLog.error("chromium local state read failed", error: error, fields: ["app.bundle_id": bundleID])
-            return .empty
+            AppLog.error("browser profile metadata read failed", error: error, fields: fields)
+            return .settled(.empty)
+        }
+    }
+
+    private static func chromiumProfiles(subpath: String, bundleID: String) -> ProfileScan {
+        let data: Data
+        switch readMetadata(subpath: subpath + "/Local State", source: .chromiumLocalState, bundleID: bundleID) {
+        case .contents(let contents): data = contents
+        case .settled(let scan): return scan
         }
         guard let profiles = ProfileCore.parseChromiumProfiles(localStateJSON: data) else {
             AppLog.warn("chromium local state present but unparseable", fields: ["app.bundle_id": bundleID])
@@ -73,19 +96,13 @@ enum ProfileDiscovery {
     }
 
     private static func firefoxProfiles(bundleID: String) -> ProfileScan {
-        let iniURL = applicationSupportURL.appending(path: "Firefox/profiles.ini")
-        let ini: String
-        do {
-            ini = try String(contentsOf: iniURL, encoding: .utf8)
-        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
-            // Expected when Firefox has never run — not an error.
-            AppLog.debug("no firefox profiles.ini present", fields: ["app.bundle_id": bundleID])
-            return .empty
-        } catch where isPermissionDenial(error) {
-            AppLog.warn("firefox profile data blocked by macos", fields: ["app.bundle_id": bundleID])
-            return ProfileScan(profiles: [], accessDenied: true)
-        } catch {
-            AppLog.error("firefox profiles.ini read failed", error: error, fields: ["app.bundle_id": bundleID])
+        let data: Data
+        switch readMetadata(subpath: "Firefox/profiles.ini", source: .firefoxProfilesINI, bundleID: bundleID) {
+        case .contents(let contents): data = contents
+        case .settled(let scan): return scan
+        }
+        guard let ini = String(data: data, encoding: .utf8) else {
+            AppLog.warn("firefox profiles.ini present but not utf-8", fields: ["app.bundle_id": bundleID])
             return .empty
         }
         let profiles = ProfileCore.parseFirefoxProfiles(ini: ini)
@@ -94,5 +111,20 @@ enum ProfileDiscovery {
             AppLog.debug("firefox profiles.ini has no profiles", fields: ["app.bundle_id": bundleID])
         }
         return ProfileScan(profiles: profiles, accessDenied: false)
+    }
+
+    private static func arcSpaces(bundleID: String) -> ProfileScan {
+        let data: Data
+        switch readMetadata(subpath: ProfileCore.arcSidebarSubpath, source: .arcSidebar, bundleID: bundleID) {
+        case .contents(let contents): data = contents
+        case .settled(let scan): return scan
+        }
+        guard let spaces = ProfileCore.parseArcSpaces(sidebarJSON: data) else {
+            // Arc's format is undocumented and may change under us; the plain icon still works.
+            AppLog.warn("arc sidebar present but unparseable", fields: ["app.bundle_id": bundleID])
+            return .empty
+        }
+        AppLog.debug("arc spaces discovered", fields: ["app.bundle_id": bundleID, "profile.count": String(spaces.count)])
+        return ProfileScan(profiles: spaces, accessDenied: false)
     }
 }

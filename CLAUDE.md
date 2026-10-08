@@ -17,8 +17,8 @@ Target, scheme, product, and module are all `Linkea` (bundle ID `com.norlisviamo
 Pure core (no AppKit, fully unit-tested) separated from thin adapters:
 
 - `LinkRouterCore.swift` — URL scheme allow-listing, browser dedupe, panel placement math, domain rules (`DomainRules`), shortcut-key mapping.
-- `ProfileCore.swift` — Chromium `Local State` / Firefox `profiles.ini` parsers, launch-argument builders, Safari menu-title helpers.
-- Adapters: `BrowserDiscovery` (NSWorkspace), `ProfileDiscovery` (profile files on disk), `SafariProfileLauncher` (Accessibility/AXPress, experimental), `DefaultBrowserManager`.
+- `ProfileCore.swift` — Chromium `Local State` / Firefox `profiles.ini` / Arc sidebar parsers, launch-argument builders, Safari menu-title helpers.
+- Adapters: `BrowserDiscovery` (NSWorkspace), `ProfileDiscovery` (profile files on disk, including Arc's `StorableSidebar.json` spaces), `ArcSpaceLauncher` (osascript with Arc's AppleScript dictionary — Arc ignores `--profile-directory`, so profiles are reached through spaces), `SafariProfileLauncher` (Accessibility/AXPress, experimental), `DefaultBrowserManager`.
 - UI: `PickerPanelController` (pre-created non-activating `NSPanel` — never steal focus from the source app), `PickerView` (icons + profile chips), `OnboardingView`/`SafariProfilesSettingsView` (setup window: **fixed size + ScrollView**; constraint-driven window sizing with dynamic SwiftUI content crashes AppKit with the "Update Constraints in Window pass" loop).
 - `Logging.swift` — mandatory logging path: single-line JSON to stderr with ECS field names (`@timestamp` ISO 8601 UTC, `log.level`, static `message`, variables as fields, `error.type`/`error.message` logged exactly once). Never log full URLs, profile display names, or `gaia_name` — scheme, domain, bundle ID, and counters only.
 

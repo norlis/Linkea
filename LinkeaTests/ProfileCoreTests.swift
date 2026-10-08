@@ -107,11 +107,95 @@ struct LaunchArgumentTests {
         #expect(ProfileCore.launchArguments(recipe: .safariProfileMenuItem("New Work Window"), urls: []).isEmpty)
     }
 
+    @Test func arcPassesTheSpaceIDFirstThenTheURLsToTheScript() throws {
+        let first = try #require(URL(string: "https://example.com/1"))
+        let second = try #require(URL(string: "https://example.com/2"))
+        let arguments = ProfileCore.launchArguments(recipe: .arcSpace("6CA2C3C6"), urls: [first, second])
+        #expect(arguments == ["6CA2C3C6", "https://example.com/1", "https://example.com/2"])
+    }
+
     @Test func multipleURLsAreAppendedInOrder() throws {
         let first = try #require(URL(string: "https://example.com/1"))
         let second = try #require(URL(string: "https://example.com/2"))
         let arguments = ProfileCore.launchArguments(recipe: .chromiumProfileDirectory("Default"), urls: [first, second])
         #expect(arguments == ["--profile-directory=Default", "https://example.com/1", "https://example.com/2"])
+    }
+}
+
+struct ArcSpaceParsingTests {
+    // Trimmed from a real StorableSidebar.json: `spaces` interleaves each space's id string with
+    // its object, and the first container holds no spaces at all.
+    private let fixture = Data("""
+    {
+      "sidebar": {
+        "containers": [
+          { "global": {} },
+          {
+            "spaces": [
+              "A7A76E41",
+              {
+                "id": "A7A76E41",
+                "title": "Personal",
+                "profile": { "default": true },
+                "customInfo": {
+                  "windowTheme": {
+                    "primaryColorPalette": {
+                      "midTone": { "red": 1.0000001, "green": 0.5220286, "blue": -0.0498752, "alpha": 1, "colorSpace": "extendedSRGB" }
+                    }
+                  }
+                }
+              },
+              "6CA2C3C6",
+              { "id": "6CA2C3C6", "title": "Trabajo", "profile": { "custom": { "_0": { "directoryBasename": "Profile 3" } } } },
+              "4DA7AB1F",
+              { "id": "4DA7AB1F", "title": "" }
+            ]
+          }
+        ]
+      }
+    }
+    """.utf8)
+
+    @Test func parsesSpacesInSidebarOrderSkippingTheInterleavedIDs() throws {
+        let spaces = try #require(ProfileCore.parseArcSpaces(sidebarJSON: fixture))
+        #expect(spaces.map(\.id) == ["A7A76E41", "6CA2C3C6", "4DA7AB1F"])
+        #expect(spaces.map(\.recipe) == [.arcSpace("A7A76E41"), .arcSpace("6CA2C3C6"), .arcSpace("4DA7AB1F")])
+    }
+
+    @Test func untitledSpaceFallsBackToItsSidebarPosition() throws {
+        let spaces = try #require(ProfileCore.parseArcSpaces(sidebarJSON: fixture))
+        #expect(spaces.map(\.displayName) == ["Personal", "Trabajo", "Space 3"])
+    }
+
+    @Test func themeMidToneBecomesTheTintClampedToTheDisplayableRange() throws {
+        let spaces = try #require(ProfileCore.parseArcSpaces(sidebarJSON: fixture))
+        #expect(spaces.first?.tint == ProfileTint(red: 255, green: 133, blue: 0))
+        #expect(spaces.dropFirst().allSatisfy { $0.tint == nil })
+    }
+
+    @Test(arguments: ["not json", #"{}"#, #"{"sidebar": {}}"#])
+    func unrecognisedStructureYieldsNil(json: String) {
+        #expect(ProfileCore.parseArcSpaces(sidebarJSON: Data(json.utf8)) == nil)
+    }
+
+    @Test func containersWithoutSpacesYieldAValidEmptyList() {
+        let json = Data(#"{"sidebar": {"containers": [{"global": {}}]}}"#.utf8)
+        #expect(ProfileCore.parseArcSpaces(sidebarJSON: json) == [])
+    }
+}
+
+struct AppleScriptErrorNumberTests {
+    @Test(arguments: [
+        ("arc.applescript:444:449: execution error: Not authorized to send Apple events to Arc. (-1743)\n", -1743),
+        ("execution error: Can’t get space id \"X\" (in (-1) state). (-1728)", -1728)
+    ])
+    func extractsTheTrailingErrorNumber(diagnostics: String, expected: Int) {
+        #expect(ProfileCore.appleScriptErrorNumber(fromDiagnostics: diagnostics) == expected)
+    }
+
+    @Test(arguments: ["", "execution error: something odd", "(-17x3)"])
+    func noTrailingNumberYieldsNil(diagnostics: String) {
+        #expect(ProfileCore.appleScriptErrorNumber(fromDiagnostics: diagnostics) == nil)
     }
 }
 
