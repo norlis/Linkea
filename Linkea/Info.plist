@@ -30,5 +30,7 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Linkea controls Arc only to open the links you choose in the Arc space you pick.</string>
 </dict>
 </plist>

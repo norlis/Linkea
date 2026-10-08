@@ -6,6 +6,7 @@ nonisolated enum LaunchRecipe: Hashable {
     case chromiumProfileDirectory(String)
     case firefoxProfileName(String)
     case safariProfileMenuItem(String)
+    case arcSpace(String)
 }
 
 /// The colour a browser assigned to a profile, as plain components so the pure layer stays free
@@ -207,16 +208,100 @@ nonisolated enum ProfileCore {
         return profiles
     }
 
+    // MARK: - Arc
+
+    static let arcBundleID = "company.thebrowser.Browser"
+    /// Arc ignores `--profile-directory`: a link lands in whichever space is active. Profiles are
+    /// reachable only through spaces, which this file lists alongside Arc's own state.
+    static let arcSidebarSubpath = "Arc/StorableSidebar.json"
+
+    /// Parses Arc's `StorableSidebar.json` into its spaces, in sidebar order. Each space id is the
+    /// one Arc's AppleScript dictionary accepts. The format is undocumented, so anything without
+    /// `sidebar.containers` yields nil and the caller degrades to a plain Arc icon.
+    static func parseArcSpaces(sidebarJSON: Data) -> [BrowserProfile]? {
+        struct Sidebar: Decodable {
+            struct Root: Decodable {
+                let containers: [Container]
+            }
+
+            struct Container: Decodable {
+                let spaces: [SpaceSlot]?
+            }
+
+            /// `spaces` interleaves each space's id string with its object; only objects count.
+            struct SpaceSlot: Decodable {
+                let space: Space?
+
+                init(from decoder: any Decoder) throws {
+                    space = try? Space(from: decoder)
+                }
+            }
+
+            struct Space: Decodable {
+                let id: String
+                let title: String?
+                let customInfo: CustomInfo?
+            }
+
+            struct CustomInfo: Decodable {
+                let windowTheme: WindowTheme?
+            }
+
+            struct WindowTheme: Decodable {
+                let primaryColorPalette: Palette?
+            }
+
+            struct Palette: Decodable {
+                let midTone: Colour?
+            }
+
+            struct Colour: Decodable {
+                let red: Double
+                let green: Double
+                let blue: Double
+            }
+
+            let sidebar: Root
+        }
+
+        guard let sidebar = try? JSONDecoder().decode(Sidebar.self, from: sidebarJSON) else { return nil }
+        let spaces = sidebar.sidebar.containers.flatMap { $0.spaces ?? [] }.compactMap(\.space)
+        return spaces.enumerated().map { index, space in
+            let colour = space.customInfo?.windowTheme?.primaryColorPalette?.midTone
+            return BrowserProfile(
+                id: space.id,
+                displayName: space.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Space \(index + 1)",
+                recipe: .arcSpace(space.id),
+                tint: colour.map { tint(red: $0.red, green: $0.green, blue: $0.blue) }
+            )
+        }
+    }
+
+    /// Arc themes use extended sRGB, whose components stray outside 0…1.
+    private static func tint(red: Double, green: Double, blue: Double) -> ProfileTint {
+        func byte(_ component: Double) -> Int { Int((min(max(component, 0), 1) * 255).rounded()) }
+        return ProfileTint(red: byte(red), green: byte(green), blue: byte(blue))
+    }
+
+    /// The AppleScript error number osascript prints last on stderr ("… (-1743)"). The rest of
+    /// that text is never logged: AppleScript echoes the offending values, URLs included.
+    static func appleScriptErrorNumber(fromDiagnostics diagnostics: String) -> Int? {
+        guard let match = diagnostics.firstMatch(of: /\((-?\d+)\)\s*$/) else { return nil }
+        return Int(match.1)
+    }
+
     // MARK: - Launch arguments
 
-    /// Command-line arguments that open `urls` in the given profile. The profile directory stays
-    /// one argument even with spaces — argument arrays need no shell quoting.
+    /// Command-line arguments that open `urls` in the given profile — for Arc, the arguments of the
+    /// launcher script's run handler. The profile directory stays one argument even with spaces —
+    /// argument arrays need no shell quoting.
     static func launchArguments(recipe: LaunchRecipe, urls: [URL]) -> [String] {
         let urlStrings = urls.map(\.absoluteString)
         return switch recipe {
         case .chromiumProfileDirectory(let directory): ["--profile-directory=\(directory)"] + urlStrings
         case .firefoxProfileName(let name): ["-P", name, "--new-instance"] + urlStrings
         case .safariProfileMenuItem: []
+        case .arcSpace(let spaceID): [spaceID] + urlStrings
         }
     }
 

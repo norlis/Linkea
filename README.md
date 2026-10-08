@@ -62,6 +62,7 @@ Browsers with two or more profiles show small initial-letter chips under their i
 
 - **Chrome, Chromium, Edge, Brave, Vivaldi**: profiles are read from each browser's `Local State` file and launched with `--profile-directory` — reliable and automatic.
 - **Firefox**: profiles are read from `profiles.ini` and launched with `-P <name> --new-instance`. Firefox runs one instance per profile, which is a Firefox architectural quirk.
+- **Arc**: Arc ignores `--profile-directory` and ties every profile to a space, so the chips are your spaces (name and theme colour), read from Arc's `StorableSidebar.json`. Linkea opens the link through Arc's AppleScript dictionary: it focuses the space and creates the tab there. The first time, macOS asks to let Linkea control Arc (System Settings ▸ Privacy & Security ▸ Automation); if you decline, or a future Arc release changes its undocumented sidebar format, links still open in plain Arc and are never lost.
 - **Safari (experimental, off by default)**: Safari has no profile API, so Linkea presses the "New <profile> Window" item in Safari's File menu via Accessibility and opens the link in that window. Enable it in the setup window: grant Accessibility access, open Safari, detect the menu items, and mark the ones that are your profiles. Costs to know about: it needs the Accessibility permission, it briefly brings Safari to the front, and a Safari update can rename its menus (re-detect and re-map if chips stop working — the link always falls back to plain Safari, it is never lost).
 
 ## Tests

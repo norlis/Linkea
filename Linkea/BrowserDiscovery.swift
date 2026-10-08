@@ -78,6 +78,8 @@ final class BrowserDiscovery {
         switch profile.recipe {
         case .safariProfileMenuItem(let menuTitle):
             SafariProfileLauncher.open(urls, menuItemTitle: menuTitle, safariAppURL: browser.appURL)
+        case .arcSpace(let spaceID):
+            ArcSpaceLauncher.open(urls, spaceID: spaceID, arcAppURL: browser.appURL)
         case .chromiumProfileDirectory, .firefoxProfileName:
             let configuration = NSWorkspace.OpenConfiguration()
             configuration.arguments = ProfileCore.launchArguments(recipe: profile.recipe, urls: urls)
