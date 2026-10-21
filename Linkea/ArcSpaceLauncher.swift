@@ -9,22 +9,38 @@ enum ArcSpaceLauncher {
 
     /// The space id and URLs arrive through `argv`, never spliced into the source, so a URL can
     /// not be read as script. Windows go by index because Arc's window and tab object specifiers
-    /// fail to resolve (-1700) — a reference to either cannot be kept in a variable. Incognito
-    /// windows have no spaces, hence the search for a regular one.
+    /// fail to resolve (-1700) — a reference to either cannot be kept in a variable. The target is
+    /// the first window that lists the space, not merely the first one: incognito windows have no
+    /// spaces, and since Arc 1.169 an auxiliary window reports itself as a regular, non-incognito
+    /// window with no spaces either, at an unpredictable position in the window order. A window is
+    /// created only when Arc has none with spaces; a space that no longer exists fails instead,
+    /// and the caller falls back to plain Arc.
     private static let script = """
+    on windowIndexListing(spaceID)
+        tell application id "company.thebrowser.Browser"
+            repeat with i from 1 to count of windows
+                if (id of spaces of window i) contains spaceID then return i
+            end repeat
+        end tell
+        return 0
+    end windowIndexListing
+
+    on anyWindowHasSpaces()
+        tell application id "company.thebrowser.Browser"
+            repeat with i from 1 to count of windows
+                if (count of spaces of window i) > 0 then return true
+            end repeat
+        end tell
+        return false
+    end anyWindowHasSpaces
+
     on run argv
         set spaceID to item 1 of argv
+        set targetIndex to windowIndexListing(spaceID)
         tell application id "company.thebrowser.Browser"
-            set targetIndex to 0
-            repeat with i from 1 to count of windows
-                if incognito of window i is false then
-                    set targetIndex to i
-                    exit repeat
-                end if
-            end repeat
-            if targetIndex is 0 then
+            if targetIndex is 0 and not (my anyWindowHasSpaces()) then
                 make new window
-                set targetIndex to 1
+                set targetIndex to my windowIndexListing(spaceID)
             end if
             tell space id spaceID of window targetIndex
                 focus
